@@ -1,11 +1,16 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const path = require('path');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
 
 // Middleware
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
 app.use(express.json());
 
 // Your API routes here
@@ -13,9 +18,9 @@ app.use('/api/students', require('./routes/studentRoutes'));
 // ... other routes
 
 // Serve static files from React
-app.use(express.static(path.join(__dirname, '../client/build')));
+app.use(express.static(path.join(__dirname, '../../client/build')));
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  res.sendFile(path.join(__dirname, '../../client/build', 'index.html'));
 });
 
 // Connect to MongoDB and start server
