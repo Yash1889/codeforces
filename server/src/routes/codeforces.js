@@ -3,21 +3,7 @@ const router = express.Router();
 const { fetchCodeforcesData } = require('../services/codeforcesService');
 const { updateCronSchedule } = require('../services/cronService');
 const Student = require('../models/Student');
-
-// Manually trigger data sync for a student
-router.post('/sync/:handle', async (req, res) => {
-  try {
-    const student = await Student.findOne({ codeforcesHandle: req.params.handle });
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-
-    await fetchCodeforcesData(student.codeforcesHandle);
-    res.json({ message: 'Data sync completed successfully' });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
+const axios = require('axios');
 
 // Update cron schedule
 router.post('/schedule', async (req, res) => {
@@ -87,6 +73,38 @@ router.get('/:handle/problems', async (req, res) => {
     res.json(filteredData);
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+});
+
+// Proxy Codeforces API endpoints for frontend comparison feature
+
+// Get user info
+router.get('/user/:handle', async (req, res) => {
+  try {
+    const cfRes = await axios.get(`https://codeforces.com/api/user.info?handles=${req.params.handle}`);
+    res.json(cfRes.data);
+  } catch (error) {
+    res.status(500).json({ status: 'FAILED', comment: error.message });
+  }
+});
+
+// Get rating history
+router.get('/rating/:handle', async (req, res) => {
+  try {
+    const cfRes = await axios.get(`https://codeforces.com/api/user.rating?handle=${req.params.handle}`);
+    res.json(cfRes.data);
+  } catch (error) {
+    res.status(500).json({ status: 'FAILED', comment: error.message });
+  }
+});
+
+// Get submissions
+router.get('/submissions/:handle', async (req, res) => {
+  try {
+    const cfRes = await axios.get(`https://codeforces.com/api/user.status?handle=${req.params.handle}&from=1&count=1000`);
+    res.json(cfRes.data);
+  } catch (error) {
+    res.status(500).json({ status: 'FAILED', comment: error.message });
   }
 });
 

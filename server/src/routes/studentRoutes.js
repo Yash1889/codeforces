@@ -32,7 +32,7 @@ router.use((req, res, next) => {
 });
 
 // Base routes
-router.get('/', protect, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const students = await Student.find();
     res.status(200).json(students);
@@ -41,11 +41,24 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-router.post('/', protect, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
+    console.log('Creating student with body:', req.body);
     const student = await Student.create(req.body);
-    res.status(201).json(student);
+    let codeforcesError = null;
+    try {
+      await syncCodeforcesData(student);
+    } catch (cfErr) {
+      codeforcesError = cfErr.message || 'Failed to fetch Codeforces data';
+      console.error('Codeforces fetch error:', codeforcesError);
+    }
+    const updatedStudent = await Student.findById(student._id);
+    if (codeforcesError) {
+      return res.status(201).json({ student: updatedStudent, warning: codeforcesError });
+    }
+    res.status(201).json(updatedStudent);
   } catch (error) {
+    console.error('Error creating student:', error);
     res.status(500).json({ message: 'Error creating student', error: error.message });
   }
 });
@@ -57,7 +70,129 @@ router.get('/:id', protect, async (req, res) => {
     if (!student) {
       return res.status(404).json({ message: 'Student not found' });
     }
-    res.status(200).json(student);
+
+    // Fetch and update Codeforces data before returning
+    let cfData = null;
+    let submissions = [];
+    let contestHistory = [];
+    let problemSolvingData = {
+      totalSolved: 0,
+      problemsByRating: [],
+      tagStats: [],
+      averagePerDay: 0.0
+    };
+    try {
+      // 1. Fetch user.info
+      const cfInfoRes = await axios.get(`https://codeforces.com/api/user.info?handles=${student.codeforcesHandle}`);
+      if (cfInfoRes.data.status === 'OK' && cfInfoRes.data.result && cfInfoRes.data.result.length > 0) {
+        cfData = cfInfoRes.data.result[0];
+        student.currentRating = cfData.rating || 0;
+        student.maxRating = cfData.maxRating || 0;
+        student.rank = cfData.rank || '';
+      }
+      // 2. Fetch user.status (submissions)
+      const cfStatusRes = await axios.get(`https://codeforces.com/api/user.status?handle=${student.codeforcesHandle}&from=1&count=1000`);
+      if (cfStatusRes.data.status === 'OK' && Array.isArray(cfStatusRes.data.result)) {
+        submissions = cfStatusRes.data.result;
+        // Calculate problems solved
+        const solvedSet = new Set();
+        const tagMap = {};
+        const ratingMap = {};
+        const recentSubmissions = [];
+        let earliestSubmission = null;
+        let latestSubmission = null;
+        submissions.forEach((sub, idx) => {
+          if (sub.verdict === 'OK' && sub.problem) {
+            const pid = `${sub.problem.contestId}-${sub.problem.index}`;
+            solvedSet.add(pid);
+            // Tag stats
+            if (Array.isArray(sub.problem.tags)) {
+              sub.problem.tags.forEach(tag => {
+                if (!tagMap[tag]) tagMap[tag] = { solved: 0, attempted: 0 };
+                tagMap[tag].solved = (tagMap[tag].solved || 0) + 1;
+              });
+            }
+            // Problems by rating
+            if (sub.problem.rating) {
+              if (!ratingMap[sub.problem.rating]) ratingMap[sub.problem.rating] = 0;
+              ratingMap[sub.problem.rating] += 1;
+            }
+          }
+          // Tag stats for attempted
+          if (sub.problem && Array.isArray(sub.problem.tags)) {
+            sub.problem.tags.forEach(tag => {
+              if (!tagMap[tag]) tagMap[tag] = { solved: 0, attempted: 0 };
+              tagMap[tag].attempted = (tagMap[tag].attempted || 0) + 1;
+            });
+          }
+          // Collect recent submissions (last 10)
+          if (idx < 10 && sub.problem) {
+            recentSubmissions.push({
+              problemId: `${sub.problem.contestId}-${sub.problem.index}`,
+              problemName: sub.problem.name,
+              problemRating: sub.problem.rating || null,
+              verdict: sub.verdict,
+              date: new Date(sub.creationTimeSeconds * 1000),
+              problem: {
+                contestId: sub.problem.contestId,
+                index: sub.problem.index,
+                name: sub.problem.name,
+                rating: sub.problem.rating,
+                tags: sub.problem.tags
+              }
+            });
+          }
+          // Track earliest and latest submission dates
+          if (sub.creationTimeSeconds) {
+            const subDate = new Date(sub.creationTimeSeconds * 1000);
+            if (!earliestSubmission || subDate < earliestSubmission) earliestSubmission = subDate;
+            if (!latestSubmission || subDate > latestSubmission) latestSubmission = subDate;
+          }
+        });
+        problemSolvingData.totalSolved = solvedSet.size;
+        problemSolvingData.problemsByRating = Object.entries(ratingMap).map(([rating, count]) => ({ rating: Number(rating), count }));
+        problemSolvingData.tagStats = Object.entries(tagMap).map(([tag, stats]) => {
+          const attempted = typeof stats.attempted === 'number' ? stats.attempted : 0;
+          const solved = typeof stats.solved === 'number' ? stats.solved : 0;
+          return {
+            tag,
+            solved,
+            attempted,
+            successRate: attempted > 0 ? ((solved / attempted) * 100).toFixed(1) + '%' : '0.0%'
+          };
+        });
+        // Calculate average problems per day
+        let avgPerDay = 0.0;
+        if (earliestSubmission && latestSubmission && solvedSet.size > 0) {
+          const days = Math.max(1, Math.ceil((latestSubmission - earliestSubmission) / (1000 * 60 * 60 * 24)));
+          avgPerDay = (solvedSet.size / days).toFixed(2);
+        }
+        problemSolvingData.averagePerDay = avgPerDay;
+        student.problemsSolved = solvedSet.size;
+        student.problemSolvingData = problemSolvingData;
+        student.recentSubmissions = recentSubmissions;
+      }
+      // 3. Fetch user.rating (contest history)
+      const cfRatingRes = await axios.get(`https://codeforces.com/api/user.rating?handle=${student.codeforcesHandle}`);
+      if (cfRatingRes.data.status === 'OK' && Array.isArray(cfRatingRes.data.result)) {
+        contestHistory = cfRatingRes.data.result.map(contest => ({
+          contestId: contest.contestId,
+          contestName: contest.contestName,
+          rank: contest.rank,
+          oldRating: contest.oldRating,
+          newRating: contest.newRating,
+          date: new Date(contest.ratingUpdateTimeSeconds * 1000)
+        }));
+        student.contestHistory = contestHistory;
+      }
+      await student.save();
+    } catch (cfErr) {
+      console.error('Error updating Codeforces data on profile view:', cfErr.message);
+    }
+
+    // Refetch the updated student to ensure latest data is sent
+    const updatedStudent = await Student.findById(student._id);
+    res.status(200).json(updatedStudent);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching student', error: error.message });
   }
@@ -245,6 +380,163 @@ router.get('/:id/recommendations', protect, async (req, res) => {
     res.status(500).json({ message: 'Error getting recommendations', error: error.message });
   }
 });
+
+// Sync by MongoDB ID
+router.post('/:id/sync', async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    await syncCodeforcesData(student);
+    const updatedStudent = await Student.findById(student._id);
+    res.status(200).json(updatedStudent);
+  } catch (error) {
+    res.status(500).json({ message: 'Error syncing student', error: error.message });
+  }
+});
+
+// Sync by Codeforces handle
+router.post('/sync/handle/:handle', async (req, res) => {
+  try {
+    const student = await Student.findOne({ codeforcesHandle: req.params.handle });
+    if (!student) return res.status(404).json({ message: 'Student not found' });
+    await syncCodeforcesData(student);
+    const updatedStudent = await Student.findById(student._id);
+    res.status(200).json(updatedStudent);
+  } catch (error) {
+    res.status(500).json({ message: 'Error syncing student by handle', error: error.message });
+  }
+});
+
+// Sync all students
+router.post('/syncAll', async (req, res) => {
+  try {
+    const students = await Student.find({});
+    const updated = [];
+    for (const student of students) {
+      try {
+        await syncCodeforcesData(student);
+        updated.push({ id: student._id, handle: student.codeforcesHandle, name: student.name });
+      } catch (err) {
+        updated.push({ id: student._id, handle: student.codeforcesHandle, name: student.name, error: err.message });
+      }
+    }
+    res.status(200).json({ updated });
+  } catch (error) {
+    res.status(500).json({ message: 'Error syncing all students', error: error.message });
+  }
+});
+
+// --- SYNC LOGIC ---
+async function syncCodeforcesData(student) {
+  let cfData = null;
+  let submissions = [];
+  let contestHistory = [];
+  let problemSolvingData = {
+    totalSolved: 0,
+    problemsByRating: [],
+    tagStats: [],
+    averagePerDay: 0.0
+  };
+  // 1. Fetch user.info
+  const cfInfoRes = await axios.get(`https://codeforces.com/api/user.info?handles=${student.codeforcesHandle}`);
+  if (cfInfoRes.data.status !== 'OK' || !cfInfoRes.data.result || cfInfoRes.data.result.length === 0) {
+    throw new Error('Invalid Codeforces handle');
+  }
+  cfData = cfInfoRes.data.result[0];
+  student.currentRating = cfData.rating || 0;
+  student.maxRating = cfData.maxRating || 0;
+  student.rank = cfData.rank || '';
+  // 2. Fetch user.status (submissions)
+  const cfStatusRes = await axios.get(`https://codeforces.com/api/user.status?handle=${student.codeforcesHandle}&from=1&count=1000`);
+  if (cfStatusRes.data.status === 'OK' && Array.isArray(cfStatusRes.data.result)) {
+    submissions = cfStatusRes.data.result;
+    const solvedSet = new Set();
+    const tagMap = {};
+    const ratingMap = {};
+    const recentSubmissions = [];
+    let earliestSubmission = null;
+    let latestSubmission = null;
+    submissions.forEach((sub, idx) => {
+      if (sub.verdict === 'OK' && sub.problem) {
+        const pid = `${sub.problem.contestId}-${sub.problem.index}`;
+        solvedSet.add(pid);
+        if (Array.isArray(sub.problem.tags)) {
+          sub.problem.tags.forEach(tag => {
+            if (!tagMap[tag]) tagMap[tag] = { solved: 0, attempted: 0 };
+            tagMap[tag].solved = Number(tagMap[tag].solved || 0) + 1;
+          });
+        }
+        if (sub.problem.rating) {
+          if (!ratingMap[sub.problem.rating]) ratingMap[sub.problem.rating] = 0;
+          ratingMap[sub.problem.rating] += 1;
+        }
+      }
+      if (sub.problem && Array.isArray(sub.problem.tags)) {
+        sub.problem.tags.forEach(tag => {
+          if (!tagMap[tag]) tagMap[tag] = { solved: 0, attempted: 0 };
+          tagMap[tag].attempted = Number(tagMap[tag].attempted || 0) + 1;
+        });
+      }
+      // Always collect last 10 submissions, regardless of verdict
+      if (idx < 10 && sub.problem) {
+        recentSubmissions.push({
+          problemId: `${sub.problem.contestId}-${sub.problem.index}`,
+          problemName: sub.problem.name,
+          problemRating: sub.problem.rating || null,
+          verdict: sub.verdict,
+          date: new Date(sub.creationTimeSeconds * 1000),
+          problem: {
+            contestId: sub.problem.contestId,
+            index: sub.problem.index,
+            name: sub.problem.name,
+            rating: sub.problem.rating,
+            tags: sub.problem.tags
+          }
+        });
+      }
+      if (sub.creationTimeSeconds) {
+        const subDate = new Date(sub.creationTimeSeconds * 1000);
+        if (!earliestSubmission || subDate < earliestSubmission) earliestSubmission = subDate;
+        if (!latestSubmission || subDate > latestSubmission) latestSubmission = subDate;
+      }
+    });
+    problemSolvingData.totalSolved = solvedSet.size;
+    problemSolvingData.problemsByRating = Object.entries(ratingMap).map(([rating, count]) => ({ rating: Number(rating), count }));
+    problemSolvingData.tagStats = Object.entries(tagMap).map(([tag, stats]) => {
+      const attempted = Number(stats.attempted || 0);
+      const solved = Number(stats.solved || 0);
+      return {
+        tag,
+        solved,
+        attempted,
+        successRate: attempted > 0 ? ((solved / attempted) * 100).toFixed(1) + '%' : '0.0%'
+      };
+    });
+    let avgPerDay = 0.0;
+    if (earliestSubmission && latestSubmission && solvedSet.size > 0) {
+      const days = Math.max(1, Math.ceil((latestSubmission - earliestSubmission) / (1000 * 60 * 60 * 24)));
+      avgPerDay = (solvedSet.size / days).toFixed(2);
+    }
+    problemSolvingData.averagePerDay = avgPerDay;
+    student.problemsSolved = solvedSet.size;
+    student.problemSolvingData = problemSolvingData;
+    student.recentSubmissions = recentSubmissions;
+  }
+  // 3. Fetch user.rating (contest history)
+  const cfRatingRes = await axios.get(`https://codeforces.com/api/user.rating?handle=${student.codeforcesHandle}`);
+  if (cfRatingRes.data.status === 'OK' && Array.isArray(cfRatingRes.data.result)) {
+    contestHistory = cfRatingRes.data.result.map(contest => ({
+      contestId: contest.contestId,
+      contestName: contest.contestName,
+      rank: contest.rank,
+      oldRating: contest.oldRating,
+      newRating: contest.newRating,
+      date: new Date(contest.ratingUpdateTimeSeconds * 1000)
+    }));
+    student.contestHistory = contestHistory;
+  }
+  await student.save();
+}
 
 router.put('/:id', protect, async (req, res) => {
   try {

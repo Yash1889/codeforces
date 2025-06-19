@@ -190,11 +190,9 @@ const StudentProfile = () => {
     ? (solvedProblemsWithRating.reduce((sum, s) => sum + s.problemRating, 0) / solvedProblemsWithRating.length).toFixed(0)
     : 'N/A';
 
-  // Calculate average problems per day
-  const daysInProblemFilter = problemFilter;
-  const uniqueSolvedProblemsInFilter = new Set(filteredSubmissions.filter(s => s.verdict === 'OK').map(s => s.problemId));
-  const avgProblemsPerDay = daysInProblemFilter > 0 
-    ? (uniqueSolvedProblemsInFilter.size / daysInProblemFilter).toFixed(2)
+  // Use backend's averagePerDay if available
+  const avgProblemsPerDay = student.problemSolvingData?.averagePerDay !== undefined
+    ? student.problemSolvingData.averagePerDay
     : 'N/A';
 
   // Find most difficult problem solved
@@ -321,7 +319,7 @@ const StudentProfile = () => {
                   Average Problems per Day
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                  {student.problemSolvingData?.averageProblemsPerDay?.toFixed(1) || '0.0'}
+                  {avgProblemsPerDay}
                 </Typography>
               </Box>
               <Box>
@@ -335,7 +333,7 @@ const StudentProfile = () => {
                         {tag.tag}
                       </Typography>
                       <Typography variant="body2">
-                        {tag.solved}/{tag.attempted} ({Number(tag.successRate).toFixed(1)}%)
+                        {tag.solved}/{tag.attempted} ({tag.attempted > 0 ? tag.successRate : 'N/A'})
                       </Typography>
                     </Box>
                     <LinearProgress
