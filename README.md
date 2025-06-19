@@ -45,7 +45,7 @@ TLE-ELIMINATORS/
    ```bash
    npm install
    ```
-3. Create .env file with required environment variables
+3. Create .env file with required environment variables (see below)
 4. Start the server:
    ```bash
    npm run dev
@@ -67,16 +67,48 @@ TLE-ELIMINATORS/
 
 ## Environment Variables
 
-Create a `.env` file in the server directory with the following variables:
-
+### Backend (.env in server/)
 ```
-MONGODB_URI=your_mongodb_uri
+MONGO_URI=your_mongodb_uri
 PORT=5000
 JWT_SECRET=your_jwt_secret
 EMAIL_SERVICE=gmail
-EMAIL_USER=your_email
-EMAIL_PASS=your_email_password
+EMAIL_USERNAME=your_email
+EMAIL_PASSWORD=your_email_password
+EMAIL_FROM=your_email
+CODEFORCES_API_URL=https://codeforces.com/api
+CRON_SCHEDULE=0 2 * * *
 ```
+
+### Frontend (optional, only for separate deployment)
+If you deploy the frontend separately (e.g., on Vercel, Netlify, or as a separate Render service), set this in your frontend environment:
+```
+REACT_APP_API_BASE_URL=https://your-backend-url.onrender.com/api
+```
+If the frontend is served by the backend (single Render service), you do **not** need to set this variable.
+
+## Deployment on Render
+
+### Single Service (Backend serves Frontend)
+- Build your React app (`npm run build` in `client/`), then serve the build folder from your Express backend.
+- Deploy the backend to Render as a web service.
+- All API calls use the relative `/api` path and will work out of the box.
+
+### Separate Frontend and Backend Services
+- Deploy both `client` and `server` as separate web services on Render.
+- Set `REACT_APP_API_BASE_URL` in the frontend Render service to your backend's Render URL (e.g., `https://your-backend-url.onrender.com/api`).
+- Make sure CORS in your backend allows your frontend's domain.
+
+## Usage
+- Visit your deployed site (e.g., `https://your-app.onrender.com`).
+- Add, view, and manage students. All Codeforces data will sync automatically.
+- If you see errors about duplicate emails or handles, use unique values for each student.
+
+## Troubleshooting
+- **API errors or blank data:** Check that your environment variables are set correctly and that the frontend is using the correct API base URL.
+- **CORS errors:** Make sure your backend CORS settings allow your frontend's domain.
+- **Render not redeploying:** Push your code to the correct branch on GitHub. Trigger a manual deploy from the Render dashboard if needed.
+- **Codeforces sync 404:** Make sure your frontend uses `/students/sync/handle/:handle` for syncing, not `/codeforces/sync/:handle`.
 
 ## API Documentation
 
