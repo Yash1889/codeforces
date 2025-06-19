@@ -9,7 +9,7 @@ const app = express();
 app.use(express.json());
 
 // Your API routes here
-app.use('/api/students', require('./src/routes/studentRoutes'));
+app.use('/api/students', require('./routes/studentRoutes'));
 // ... other routes
 
 // Serve static files from React
