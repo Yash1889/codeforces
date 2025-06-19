@@ -24,7 +24,7 @@ import axios from 'axios';
 import Loading from '../common/Loading';
 import Error from '../common/Error';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
 
 function StudentList() {
   const navigate = useNavigate();
@@ -116,7 +116,7 @@ function StudentList() {
     try {
       await axios.post(`${API_BASE_URL}/students`, formData);
       if (formData.codeforcesHandle) {
-        await axios.post(`${API_BASE_URL}/codeforces/sync/${formData.codeforcesHandle}`);
+        await axios.post(`${API_BASE_URL}/students/sync/handle/${formData.codeforcesHandle}`);
       }
       handleClose();
       fetchStudents();

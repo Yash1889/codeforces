@@ -30,6 +30,8 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+
 const StudentList = () => {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +42,7 @@ const StudentList = () => {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/students');
+        const response = await axios.get(`${API_BASE_URL}/students`);
         setStudents(response.data);
         setLoading(false);
       } catch (error) {
@@ -84,7 +86,7 @@ const StudentList = () => {
   const handleDeleteConfirm = async () => {
     if (!studentToDelete) return;
     try {
-      await axios.delete(`http://localhost:5000/api/students/${studentToDelete._id}`);
+      await axios.delete(`${API_BASE_URL}/students/${studentToDelete._id}`);
       setStudents(students.filter(s => s._id !== studentToDelete._id));
     } catch (error) {
       console.error('Error deleting student:', error);

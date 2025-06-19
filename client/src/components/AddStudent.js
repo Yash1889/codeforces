@@ -27,6 +27,8 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+
 const steps = ['Basic Information', 'Codeforces Handle', 'Confirmation'];
 
 const AddStudent = () => {
@@ -80,9 +82,9 @@ const AddStudent = () => {
     setError('');
 
     try {
-      await axios.post('http://localhost:5000/api/students', formData);
+      await axios.post(`${API_BASE_URL}/students`, formData);
       if (formData.codeforcesHandle) {
-        await axios.post(`http://localhost:5000/api/codeforces/sync/${formData.codeforcesHandle}`);
+        await axios.post(`${API_BASE_URL}/students/sync/handle/${formData.codeforcesHandle}`);
       }
       navigate('/');
     } catch (error) {

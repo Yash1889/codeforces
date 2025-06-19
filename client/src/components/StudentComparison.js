@@ -41,6 +41,8 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+
 const StudentComparison = ({ student }) => {
   const [comparisonHandles, setComparisonHandles] = useState([]);
   const [newHandle, setNewHandle] = useState('');
@@ -108,9 +110,9 @@ const StudentComparison = ({ student }) => {
     try {
       console.log('Fetching data for handle:', handle);
       const [userInfo, ratingData, submissions] = await Promise.all([
-        axios.get(`http://localhost:5000/api/codeforces/user/${handle}`),
-        axios.get(`http://localhost:5000/api/codeforces/rating/${handle}`),
-        axios.get(`http://localhost:5000/api/codeforces/submissions/${handle}`),
+        axios.get(`${API_BASE_URL}/codeforces/user/${handle}`),
+        axios.get(`${API_BASE_URL}/codeforces/rating/${handle}`),
+        axios.get(`${API_BASE_URL}/codeforces/submissions/${handle}`),
       ]);
 
       console.log('API responses:', {

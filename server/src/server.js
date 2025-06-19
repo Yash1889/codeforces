@@ -10,7 +10,14 @@ const { protect, errorHandler } = require('./middleware/authMiddleware');
 const app = express();
 
 // Middleware
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://codeforces-5.onrender.com', // Add your deployed frontend domain here
+];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
 app.use(express.json());
 
 // Debug middleware to log all requests

@@ -26,6 +26,8 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || '/api';
+
 const ProblemRecommendations = ({ student }) => {
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ const ProblemRecommendations = ({ student }) => {
   useEffect(() => {
     const fetchRecommendations = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/students/${student._id}/recommendations`);
+        const response = await axios.get(`${API_BASE_URL}/students/${student._id}/recommendations`);
         setRecommendations(response.data);
         setLoading(false);
       } catch (error) {
