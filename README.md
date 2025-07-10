@@ -1,4 +1,4 @@
-# TLE Eliminators - Student Progress Management System
+# CodeScope – Codeforces Analytics Dashboard
 
 **Live Demo:** [https://codeforces-5.onrender.com](https://codeforces-5.onrender.com)
 
